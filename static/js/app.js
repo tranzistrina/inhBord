@@ -181,7 +181,7 @@
       const selectionStart = editor.selectionStart;
       const selectionEnd = editor.selectionEnd;
       const wasFocused = document.activeElement === editor;
-      if (wasFocused && Date.now() - lastEditAt < 1200 && localText !== payload.text) {
+      if (wasFocused && Date.now() - lastEditAt < 1200 && editor.value !== payload.text) {
         pendingRemote = payload;
         return;
       }
