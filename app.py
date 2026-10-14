@@ -230,6 +230,22 @@ def on_join(data):
         emit("board_error", {"message": "Некорректный адрес доски."})
         return
     name = str(data.get("name") or "Гость").strip()[:24] or "Гость"
+    previous = sid_board.get(request.sid)
+    if previous and previous != board_id:
+        leave_room(previous)
+        with lock:
+            old = boards.get(previous)
+            old_online = 0
+            if old:
+                old["members"].discard(request.sid)
+                old["last_activity"] = time.time()
+                old_online = len(old["members"])
+                should_save_old = old_online == 0
+            else:
+                should_save_old = False
+        socketio.emit("presence", {"online": old_online}, to=previous)
+        if should_save_old:
+            save_board(previous, force=True)
     with lock:
         board = boards.get(board_id)
         if board is None:
@@ -239,23 +255,15 @@ def on_join(data):
         if board is None:
             emit("board_error", {"message": "Доска не найдена."})
             return
-        previous = sid_board.get(request.sid)
-        if previous and previous != board_id:
-            leave_room(previous)
-            old = boards.get(previous)
-            if old:
-                old["members"].discard(request.sid)
-                old["last_activity"] = time.time()
-                if not old["members"]:
-                    # Do not hold a second active membership when switching boards.
-                    socketio.start_background_task(save_board, previous, force=True)
         sid_board[request.sid] = board_id
         sid_names[request.sid] = name
         board["members"].add(request.sid)
         board["last_activity"] = time.time()
+        state = public_board(board)
+        online = len(board["members"])
     join_room(board_id)
-    emit("board_state", public_board(board))
-    socketio.emit("presence", {"online": len(board["members"])}, to=board_id)
+    emit("board_state", state)
+    socketio.emit("presence", {"online": online}, to=board_id)
 
 
 @socketio.on("text_change")
