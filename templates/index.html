@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#10111c">
+  <title>inhBord — пространство общих мыслей</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+  <div class="ambient ambient-a"></div><div class="ambient ambient-b"></div>
+  <header class="topbar">
+    <a class="brand" href="/" aria-label="inhBord, главная"><span class="brand-mark"><i></i><i></i><i></i><i></i></span><span>inh<span class="brand-light">Bord</span></span></a>
+    <div class="topbar-right"><span class="live-dot"></span><span class="top-status">Пространство в реальном времени</span><a class="github-link" href="https://github.com/tranzistrina/inhBord" target="_blank" rel="noreferrer">GitHub ↗</a></div>
+  </header>
+
+  <main class="shell">
+    <section id="homeView" class="home-view">
+      <div class="hero">
+        <div class="eyebrow"><span class="eyebrow-line"></span> ОБЩЕЕ ПРОСТРАНСТВО ДЛЯ ИДЕЙ</div>
+        <h1>Мысль появилась.<br><span>Запиши её вместе.</span></h1>
+        <p class="hero-copy">Одна доска. Один текст. Все участники видят изменения мгновенно. Без регистрации, лишних кнопок и цифровой археологии.</p>
+        <div class="hero-actions"><button id="createBoard" class="btn btn-primary"><span class="plus">＋</span> Создать доску <span class="btn-arrow">↗</span></button><button id="openRecent" class="btn btn-quiet">Открыть последнюю <span>→</span></button></div>
+        <div class="hero-note"><span class="note-icon">✳</span> Автосохранение · До 1 ГБ досок · Синхронизация в реальном времени</div>
+        <div class="hero-art" aria-hidden="true">
+          <div class="art-orbit orbit-one"></div><div class="art-orbit orbit-two"></div>
+          <div class="art-card card-back"><div class="art-card-top"><span></span><span></span><span></span></div><div class="skeleton s1"></div><div class="skeleton s2"></div><div class="skeleton s3"></div><div class="scribble"></div></div>
+          <div class="art-card card-front"><div class="art-card-top"><span></span><span></span><span></span><b>BOARD / 001</b></div><div class="art-label">ИДЕИ НА СЕГОДНЯ</div><div class="art-line">Сначала — <em>главное.</em></div><div class="art-small-line"></div><div class="art-small-line short"></div><div class="cursor"><span></span><b>you</b></div><div class="art-avatar">A</div><div class="art-avatar second">M</div></div>
+          <div class="float-tag tag-sync"><span>↔</span> синхронно</div><div class="float-tag tag-save"><span>✓</span> сохранено</div>
+          <div class="art-spark">✳</div>
+        </div>
+      </div>
+
+      <section class="boards-section">
+        <div class="section-heading"><div><div class="section-kicker">ВАШИ ПРОСТРАНСТВА</div><h2>Доски</h2></div><div class="board-count" id="boardCount">0 досок</div></div>
+        <div id="boardsGrid" class="boards-grid"><div class="loading-board"><span class="spinner"></span> Загружаем доски…</div></div>
+        <div class="storage-row"><div class="storage-copy"><span class="storage-icon">▤</span><span><b>Хранилище</b><small id="storageText">Подготовка данных…</small></span></div><div class="storage-meter"><div id="storageFill"></div></div><span id="storagePercent" class="storage-percent">0%</span></div>
+      </section>
+      <footer class="footer"><span>inhBord <span class="footer-dot">·</span> Меньше шума, больше смысла.</span><span>Создано для совместной работы <span class="footer-heart">✳</span></span></footer>
+    </section>
+
+    <section id="boardView" class="board-view hidden">
+      <div class="board-nav"><button id="backHome" class="back-button">← <span>Все доски</span></button><span class="crumb-sep">/</span><span id="breadcrumbName" class="breadcrumb-name">Доска</span><div class="board-nav-right"><span class="presence-pill"><span class="live-dot"></span><b id="onlineCount">1</b> онлайн</span><button id="renameBoard" class="icon-button" title="Переименовать доску" aria-label="Переименовать">✎</button></div></div>
+      <div class="workspace-heading"><div><div class="eyebrow"><span class="eyebrow-line"></span> ОБЩЕЕ ПРОСТРАНСТВО</div><h1 id="boardTitle">Новая доска<span class="title-period">.</span></h1><p class="workspace-subtitle">Всё, что вы пишете здесь, появляется у остальных участников автоматически.</p></div><div class="save-state"><span id="saveIndicator" class="save-check">✓</span><span><b id="saveLabel">Всё сохранено</b><small id="saveTime">Изменения общие</small></span></div></div>
+      <div class="editor-shell">
+        <div class="editor-toolbar"><div class="editor-toolbar-left"><span class="doc-icon">≡</span><span class="doc-name" id="editorDocName">Общий документ.txt</span><span class="file-badge">TXT</span></div><div class="editor-toolbar-right"><button id="copyAll" class="tool-button"><span>▢</span> Копировать всё</button><button id="pasteAll" class="tool-button"><span>↓</span> Вставить всё</button><span class="toolbar-separator"></span><button id="downloadAll" class="tool-button tool-icon" title="Скачать текст" aria-label="Скачать">↓</button></div></div>
+        <div class="editor-meta"><span><span class="tiny-live-dot"></span> <span id="connectionLabel">Подключение…</span></span><span id="wordStats">0 слов · 0 символов</span></div>
+        <textarea id="sharedText" spellcheck="false" placeholder="Начните писать здесь…&#10;&#10;Каждая строка синхронизируется с остальными участниками этой доски." aria-label="Общий текст доски"></textarea>
+        <div class="editor-footer"><span><span class="keyboard-hint">Ctrl</span> + <span class="keyboard-hint">A</span> выделить всё</span><span id="lastChanged">Изменения синхронизируются автоматически</span></div>
+      </div>
+      <div id="toast" class="toast" role="status" aria-live="polite"></div>
+      <div class="workspace-bottom"><span><span class="bottom-spark">✳</span> Все участники видят актуальную версию текста</span><button id="deleteBoard" class="delete-button">Удалить доску</button></div>
+    </section>
+  </main>
+  <div id="modalLayer" class="modal-layer hidden"><div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle"><button id="modalClose" class="modal-close" aria-label="Закрыть">×</button><div class="modal-symbol">✳</div><h2 id="modalTitle">Новая доска</h2><p id="modalDescription">Дайте пространству короткое название.</p><form id="modalForm"><input id="modalInput" maxlength="80" autocomplete="off" placeholder="Например, идеи для проекта"><div class="modal-actions"><button type="button" id="modalCancel" class="btn btn-quiet">Отмена</button><button type="submit" id="modalConfirm" class="btn btn-primary">Создать доску <span class="btn-arrow">↗</span></button></div></form></div></div>
+  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js" crossorigin="anonymous"></script>
+  <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>
