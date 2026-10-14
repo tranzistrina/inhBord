@@ -177,7 +177,7 @@
     });
     socket.on("text_update", (payload) => {
       if (!activeBoard || !payload || typeof payload.text !== "string") return;
-      // Preserve the focused writer's caret when another participant types elsewhere.
+      // Don't overwrite newer local keystrokes while a send is in flight.
       const selectionStart = editor.selectionStart;
       const selectionEnd = editor.selectionEnd;
       const wasFocused = document.activeElement === editor;
