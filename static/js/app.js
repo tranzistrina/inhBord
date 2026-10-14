@@ -181,7 +181,6 @@
       const selectionStart = editor.selectionStart;
       const selectionEnd = editor.selectionEnd;
       const wasFocused = document.activeElement === editor;
-      const localText = editor.value;
       if (wasFocused && Date.now() - lastEditAt < 1200 && localText !== payload.text) {
         pendingRemote = payload;
         return;
@@ -358,8 +357,9 @@
     event.preventDefault();
     if (!modalAction) return;
     const submit = $("modalConfirm");
+    const action = modalAction;
     submit.disabled = true;
-    try { await modalAction(modalInput.value.trim()); }
+    try { await action(modalInput.value.trim()); }
     catch (error) { notify(error.message, true); }
     finally { submit.disabled = false; }
   });
