@@ -116,7 +116,6 @@ def save_board(board_id: str, *, force: bool = False) -> bool:
         }
         encoded = (json.dumps(payload, ensure_ascii=False, separators=(",", ":")) + "\n").encode("utf-8")
         path = board_path(board_id)
-        existing_size = path.stat().st_size if path.exists() else 0
         if storage_used(exclude=board_id) + len(encoded) > MAX_STORAGE_BYTES:
             socketio.emit("storage_limit", {"message": "Лимит хранилища досок (1 ГБ) исчерпан. Изменения пока остаются в памяти сервера."}, to=board_id)
             return False
@@ -247,6 +246,9 @@ def on_join(data):
             if old:
                 old["members"].discard(request.sid)
                 old["last_activity"] = time.time()
+                if not old["members"]:
+                    # Do not hold a second active membership when switching boards.
+                    socketio.start_background_task(save_board, previous, force=True)
         sid_board[request.sid] = board_id
         sid_names[request.sid] = name
         board["members"].add(request.sid)
