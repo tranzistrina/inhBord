@@ -229,6 +229,10 @@
 
   async function openBoard(id, knownData = null) {
     if (!/^[a-f0-9]{12}$/.test(String(id))) return;
+    if (activeBoard && activeBoard.id !== id && socket) {
+      socket.disconnect();
+      socket = null;
+    }
     clearTimeout(saveTimer);
     activeBoard = {id, name: knownData?.name || "Доска"};
     homeView.classList.add("hidden");
