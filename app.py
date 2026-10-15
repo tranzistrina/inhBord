@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import secrets
 import threading
 import time
 import uuid
@@ -11,26 +12,56 @@ from typing import Any
 
 from flask import Flask, abort, jsonify, render_template, request
 from flask_socketio import SocketIO, emit, join_room, leave_room
+from waitress import serve
 
 BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = Path(os.environ.get("INHBORD_DATA_DIR", BASE_DIR / "data" / "boards"))
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 
-# Total serialized board files may not exceed 1 GiB.
 MAX_STORAGE_BYTES = int(os.environ.get("INHBORD_MAX_STORAGE_BYTES", 1024**3))
 MAX_TEXT_CHARS = int(os.environ.get("INHBORD_MAX_TEXT_CHARS", 2_000_000))
 IDLE_SAVE_SECONDS = 10 * 60
 EMPTY_SAVE_SECONDS = 3
 HOUSEKEEPING_SECONDS = 15
 
+
+def get_or_create_secret() -> str:
+    """Keep a stable Flask secret on disk, following fileMORDAinh's pattern."""
+    env_secret = os.environ.get("INHBORD_SECRET_KEY")
+    if env_secret:
+        return env_secret
+    secret_file = BASE_DIR / ".session_secret"
+    if secret_file.exists():
+        value = secret_file.read_text(encoding="utf-8").strip()
+        if value:
+            return value
+    value = secrets.token_hex(32)
+    secret_file.write_text(value, encoding="utf-8")
+    try:
+        secret_file.chmod(0o600)
+    except OSError:
+        pass
+    return value
+
+
 app = Flask(__name__)
-app.config["SECRET_KEY"] = os.environ.get("INHBORD_SECRET_KEY", "change-this-secret-before-deploying")
-socketio = SocketIO(app, cors_allowed_origins=os.environ.get("INHBORD_CORS", "*"), async_mode="threading")
+app.secret_key = get_or_create_secret()
+app.config.update(
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE="Lax",
+    SESSION_COOKIE_SECURE=os.environ.get("COOKIE_SECURE", "0") == "1",
+)
+socketio = SocketIO(
+    app,
+    cors_allowed_origins=os.environ.get("INHBORD_CORS", "*"),
+    async_mode="threading",
+)
 
 lock = threading.RLock()
 boards: dict[str, dict[str, Any]] = {}
 sid_board: dict[str, str] = {}
 sid_names: dict[str, str] = {}
+_cleanup_started = False
 
 
 def valid_board_id(board_id: str) -> bool:
@@ -45,11 +76,11 @@ def board_path(board_id: str) -> Path:
 
 def storage_used(exclude: str | None = None) -> int:
     total = 0
-    for p in DATA_DIR.glob("*.json"):
-        if exclude and p.name == f"{exclude}.json":
+    for path in DATA_DIR.glob("*.json"):
+        if exclude and path.name == f"{exclude}.json":
             continue
         try:
-            total += p.stat().st_size
+            total += path.stat().st_size
         except FileNotFoundError:
             pass
     return total
@@ -69,7 +100,7 @@ def read_board(board_id: str) -> dict[str, Any] | None:
             "text": payload.get("text", "")[:MAX_TEXT_CHARS],
             "updated_at": float(payload.get("updated_at", time.time())),
         }
-    except (OSError, ValueError, json.JSONDecodeError):
+    except (OSError, ValueError, TypeError):
         app.logger.exception("Cannot read board %s", board_id)
         return None
 
@@ -87,21 +118,25 @@ def public_board(board: dict[str, Any]) -> dict[str, Any]:
 
 def persisted_listing() -> list[dict[str, Any]]:
     result = []
-    for p in DATA_DIR.glob("*.json"):
-        board_id = p.stem
+    for path in DATA_DIR.glob("*.json"):
+        board_id = path.stem
         data = read_board(board_id) if valid_board_id(board_id) else None
         if data:
+            try:
+                size = path.stat().st_size
+            except OSError:
+                size = 0
             result.append({
                 "id": board_id,
                 "name": data["name"],
                 "updated_at": data["updated_at"],
-                "size": p.stat().st_size,
+                "size": size,
             })
     return sorted(result, key=lambda item: item["updated_at"], reverse=True)
 
 
 def save_board(board_id: str, *, force: bool = False) -> bool:
-    """Atomically persist a board; refuses writes that breach the total disk quota."""
+    """Atomically persist a board while respecting the total disk quota."""
     with lock:
         board = boards.get(board_id)
         if not board:
@@ -117,14 +152,18 @@ def save_board(board_id: str, *, force: bool = False) -> bool:
         encoded = (json.dumps(payload, ensure_ascii=False, separators=(",", ":")) + "\n").encode("utf-8")
         path = board_path(board_id)
         if storage_used(exclude=board_id) + len(encoded) > MAX_STORAGE_BYTES:
-            socketio.emit("storage_limit", {"message": "Лимит хранилища досок (1 ГБ) исчерпан. Изменения пока остаются в памяти сервера."}, to=board_id)
+            socketio.emit(
+                "storage_limit",
+                {"message": "Лимит хранилища досок исчерпан. Изменения пока остаются в памяти сервера."},
+                to=board_id,
+            )
             return False
         tmp = path.with_suffix(f".{uuid.uuid4().hex}.tmp")
         try:
-            with tmp.open("wb") as f:
-                f.write(encoded)
-                f.flush()
-                os.fsync(f.fileno())
+            with tmp.open("wb") as stream:
+                stream.write(encoded)
+                stream.flush()
+                os.fsync(stream.fileno())
             os.replace(tmp, path)
             board["dirty"] = False
             board["last_saved"] = time.time()
@@ -154,9 +193,14 @@ def load_into_memory(board_id: str) -> dict[str, Any] | None:
 def list_boards() -> list[dict[str, Any]]:
     with lock:
         live = {
-            bid: {"id": bid, "name": b["name"], "updated_at": b["updated_at"],
-                  "online": len(b["members"]), "dirty": b["dirty"]}
-            for bid, b in boards.items()
+            board_id: {
+                "id": board_id,
+                "name": board["name"],
+                "updated_at": board["updated_at"],
+                "online": len(board["members"]),
+                "dirty": board["dirty"],
+            }
+            for board_id, board in boards.items()
         }
     for item in persisted_listing():
         live.setdefault(item["id"], {**item, "online": 0, "dirty": False})
@@ -166,6 +210,11 @@ def list_boards() -> list[dict[str, Any]]:
 @app.get("/")
 def index():
     return render_template("index.html")
+
+
+@app.get("/api/health")
+def api_health():
+    return jsonify({"status": "ok", "service": "inhBord", "port": int(os.environ.get("PORT", "4568"))})
 
 
 @app.get("/api/boards")
@@ -181,8 +230,14 @@ def api_create_board():
     now = time.time()
     with lock:
         boards[board_id] = {
-            "id": board_id, "name": name, "text": "", "updated_at": now,
-            "members": set(), "last_activity": now, "last_saved": now, "dirty": True,
+            "id": board_id,
+            "name": name,
+            "text": "",
+            "updated_at": now,
+            "members": set(),
+            "last_activity": now,
+            "last_saved": now,
+            "dirty": True,
         }
     if not save_board(board_id, force=True):
         with lock:
@@ -290,16 +345,17 @@ def on_text_change(data):
         board["last_activity"] = time.time()
         board["dirty"] = True
         online = len(board["members"])
-    # Broadcast one authoritative whole-text snapshot to every visitor on this board.
-    socketio.emit("text_update", {"text": text_value, "updated_at": board["updated_at"]}, to=board_id, include_self=False)
-    emit("change_ack", {"updated_at": board["updated_at"]})
-    socketio.emit("board_meta", {"online": online, "updated_at": board["updated_at"]}, to=board_id)
+        updated_at = board["updated_at"]
+    socketio.emit("text_update", {"text": text_value, "updated_at": updated_at}, to=board_id, include_self=False)
+    emit("change_ack", {"updated_at": updated_at})
+    socketio.emit("board_meta", {"online": online, "updated_at": updated_at}, to=board_id)
 
 
 @socketio.on("rename_board")
 def on_rename(data):
+    data = data if isinstance(data, dict) else {}
     board_id = sid_board.get(request.sid)
-    name = str((data or {}).get("name") or "").strip()[:80]
+    name = str(data.get("name") or "").strip()[:80]
     if not board_id or not name:
         return
     with lock:
@@ -310,7 +366,8 @@ def on_rename(data):
         board["updated_at"] = time.time()
         board["last_activity"] = time.time()
         board["dirty"] = True
-    socketio.emit("board_renamed", {"name": name, "updated_at": board["updated_at"]}, to=board_id)
+        updated_at = board["updated_at"]
+    socketio.emit("board_renamed", {"name": name, "updated_at": updated_at}, to=board_id)
     save_board(board_id, force=True)
 
 
@@ -329,7 +386,6 @@ def on_disconnect():
         online = len(board["members"])
     socketio.emit("presence", {"online": online}, to=board_id)
     if online == 0:
-        # Flush immediately when the final visitor leaves.
         save_board(board_id, force=True)
 
 
@@ -339,38 +395,56 @@ def housekeeping():
         now = time.time()
         with lock:
             candidates = [
-                bid for bid, b in boards.items()
-                if (not b["members"] and (now - b["last_activity"] >= EMPTY_SAVE_SECONDS))
-                or (now - b["last_activity"] >= IDLE_SAVE_SECONDS)
+                board_id
+                for board_id, board in boards.items()
+                if (
+                    not board["members"]
+                    and now - board["last_activity"] >= EMPTY_SAVE_SECONDS
+                )
+                or now - board["last_activity"] >= IDLE_SAVE_SECONDS
             ]
         for board_id in candidates:
             with lock:
                 board = boards.get(board_id)
                 if not board:
                     continue
-                # Idle boards with connected users are persisted but remain live.
                 remove_from_memory = not board["members"]
             save_board(board_id, force=True)
             if remove_from_memory:
                 with lock:
                     current = boards.get(board_id)
-                    if current and not current["members"] and time.time() - current["last_activity"] >= EMPTY_SAVE_SECONDS:
+                    if (
+                        current
+                        and not current["members"]
+                        and time.time() - current["last_activity"] >= EMPTY_SAVE_SECONDS
+                    ):
                         boards.pop(board_id, None)
 
 
 @socketio.on("connect")
 def on_connect():
-    # start_background_task is guarded so development reloader won't start duplicate loops.
     global _cleanup_started
-    try:
-        started = _cleanup_started
-    except NameError:
-        started = False
-    if not started:
+    if not _cleanup_started:
         _cleanup_started = True
         socketio.start_background_task(housekeeping)
 
 
+def main():
+    host = os.environ.get("HOST", "0.0.0.0")
+    port = int(os.environ.get("PORT", "4568"))
+    threads = max(1, int(os.environ.get("WAITRESS_THREADS", "8")))
+    # Waitress does not natively provide the WebSocket upgrade required by Socket.IO.
+    # Use Socket.IO's threading server so long-polling and WebSocket remain functional.
+    # This mirrors fileMORDAinh's explicit HOST/PORT runtime configuration.
+    socketio.run(
+        app,
+        host=host,
+        port=port,
+        debug=os.environ.get("FLASK_DEBUG") == "1",
+        use_reloader=False,
+        allow_unsafe_werkzeug=True,
+    )
+
+
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", "5000"))
-    socketio.run(app, host="0.0.0.0", port=port, debug=os.environ.get("FLASK_DEBUG") == "1")
+    main()
