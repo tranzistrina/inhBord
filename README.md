@@ -46,6 +46,7 @@ PORT=4568 python app.py
 - `HOST` — адрес привязки, по умолчанию `0.0.0.0`.
 - `PORT` — HTTP-порт, по умолчанию `4568`.
 - `INHBORD_SECRET_KEY` — постоянный секрет Flask. Если не указан, генерируется в файле `.session_secret`.
+- `COOKIE_SECURE` — `1` включает флаг Secure для cookie (используйте при HTTPS), по умолчанию `0`.
 - `COOKIE_SECURE` — `1`, если приложение доступно только по HTTPS.
 - `INHBORD_DATA_DIR` — каталог JSON-файлов досок. По умолчанию `data/boards`.
 - `INHBORD_MAX_STORAGE_BYTES` — общий лимит хранилища, по умолчанию `1073741824` байт.
