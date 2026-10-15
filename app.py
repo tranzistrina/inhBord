@@ -431,7 +431,6 @@ def on_connect():
 def main():
     host = os.environ.get("HOST", "0.0.0.0")
     port = int(os.environ.get("PORT", "4568"))
-    threads = max(1, int(os.environ.get("WAITRESS_THREADS", "8")))
     # Waitress does not natively support Socket.IO WebSocket upgrades, so keep
     # Flask-SocketIO's threading server for real-time collaboration.
     socketio.run(
