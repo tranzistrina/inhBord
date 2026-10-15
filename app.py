@@ -12,7 +12,6 @@ from typing import Any
 
 from flask import Flask, abort, jsonify, render_template, request
 from flask_socketio import SocketIO, emit, join_room, leave_room
-from waitress import serve
 
 BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = Path(os.environ.get("INHBORD_DATA_DIR", BASE_DIR / "data" / "boards"))
@@ -433,9 +432,8 @@ def main():
     host = os.environ.get("HOST", "0.0.0.0")
     port = int(os.environ.get("PORT", "4568"))
     threads = max(1, int(os.environ.get("WAITRESS_THREADS", "8")))
-    # Waitress does not natively provide the WebSocket upgrade required by Socket.IO.
-    # Use Socket.IO's threading server so long-polling and WebSocket remain functional.
-    # This mirrors fileMORDAinh's explicit HOST/PORT runtime configuration.
+    # Waitress does not natively support Socket.IO WebSocket upgrades, so keep
+    # Flask-SocketIO's threading server for real-time collaboration.
     socketio.run(
         app,
         host=host,
