@@ -7,3 +7,6 @@ instance/
 data/boards/*.json
 data/boards/*.tmp
 .DS_Store
+
+# Generated local secrets
+.session_secret
